@@ -1,11 +1,11 @@
 // test script to test parareal with backward Euler
-// g++-9 -std=c++11 -O3 -o be-test be-test.cpp && ./be-test
+// g++-9 -std=c++11 -fopenmp -O3 -o parareal-test parareal-test.cpp && ./parareal-test
 #include <stdio.h>
 #include <cmath>
 #include <cstdlib>
 #include <omp.h>
 
-#define N_THREADS 40
+#define N_THREADS 2
 
 double sinRHS (double t, double x){
   //RHS which just gives sin
@@ -241,7 +241,7 @@ int main(){
   }
   //printf("max parareal and fine solver difference is: %6.4e \n", parareal_fine_diff);
   printf("max PR and fine solver difference: %6.4E \n", parareal_fine_diff);
-  
+
   //measure speedup and efficiency
   double speedup = timer_fine / timer_parareal;
   double ideal_speedup = N_THREADS/(double)K;
@@ -250,7 +250,7 @@ int main(){
   //printf("speedup is %f, efficiency is %f\n",speedup,efficiency);
   printf("speedup: %f\n",speedup);
   printf("efficiency: %f\n",efficiency);
-  printf("\n");  
+  printf("\n");
 
   //solve and time
   // double t_timer = omp_get_wtime();
