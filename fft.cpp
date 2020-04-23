@@ -16,64 +16,81 @@
 #include <math.h>
 #include <omp.h>
 #include <complex>
+#include <fftw3.h>
 
 using namespace std ;
 typedef complex<double> dcomp;
 
 //int depth = 2.0; // 2^depth threads will be used
 int depth;
-double pi = 4.0*atan(1); 
-dcomp i = sqrt((dcomp) -1); //unit imaginary
+const double pi = 4.0*atan(1); 
+const dcomp i = sqrt((dcomp) -1); //unit imaginary
+
+dcomp complex_exp_taylor(const double x){
+
+  double C1 = 1.0;
+  double C2 = x;
+  double val1 = 1.0;
+  double val2 = x;
+  int s = 1.0; 
+  double xsq = -0.5*x*x;
+  
+  while(fabs(C1) > 1e-14){
+    C1 = C1*xsq/(2.0*s*s - s);
+    C2 = C2*xsq/(2.0*s*s + s);
+    val1 += C1;
+    val2 += C2;
+    s++;
+  }
+
+  return val1 + i*val2;
+
+}
+  
 
 /* Computes the DFT of x and writes to x_hat
- * x: input array of grid values
+:q * x: input array of grid values
  * x_hat: output array of Fourier coefficients
  * N: size of current array (changes in recursion)
  * Nmodes: size of full array
 */
-void fft(dcomp* x,dcomp* x_hat, int N, int Nmodes){
+void fft(const dcomp* x,dcomp* x_hat, const int N, const int Nmodes){
 
   if(N == 1) x_hat[0] = x[0];
   else{
 
-    // Preallocate some arrays
-    dcomp* x1 = (dcomp*) malloc(N/2 * sizeof(dcomp));
-    dcomp* x2 = (dcomp*) malloc(N/2 * sizeof(dcomp)); 
-    dcomp* x1_hat = (dcomp*) malloc(N/2 * sizeof(dcomp));
-    dcomp* x2_hat = (dcomp*) malloc(N/2 * sizeof(dcomp));
+    int Nmod2 = N/2;
+
+    // Preallocate local x_hat array
+    dcomp* x_hat_loc = (dcomp*) malloc(N * sizeof(dcomp)); 
     
-    for(int s = 0; s < N/2; s++){
-      x1[s] = x[2*s]; //even grid points
-      x2[s] = x[2*s+1]; //odd grid points
+    for(int s = 0; s < Nmod2; s++){
+      x_hat_loc[s] = x[2*s]; //even grid points
+      x_hat_loc[s+Nmod2] = x[2*s+1]; //odd grid points
     }
  
     // Recursive step   
     #pragma omp task if(N > Nmodes/(depth+1))
-    fft(x1,x1_hat,N/2,Nmodes);   
+    fft(x_hat_loc,x_hat_loc,Nmod2,Nmodes);   
     #pragma omp task if(N > Nmodes/(depth+1))
-    fft(x2,x2_hat,N/2,Nmodes);
+    fft(x_hat_loc + Nmod2,x_hat_loc + Nmod2,Nmod2,Nmodes);
     #pragma omp taskwait
     
-    // Write sums to full array   
-    for(int s = 0; s < N/2; s++){
-      x_hat[s] = x1_hat[s];
-      x_hat[s+N/2] = x2_hat[s];
-    }
-    
-    dcomp arg, xnhat, t;
+    dcomp xnhat, t;
+    dcomp w = complex_exp_taylor(-pi/Nmod2);
+    dcomp C = 1.0;
     
     // Reassebmle using the Cooley-Tukey algorithm
-    for(int s = 0; s < N/2; s++){
-      t = x_hat[s];
-      arg = -2*pi*s/N;
-      xnhat = exp(i*arg)*x_hat[s+N/2];
-      x_hat[s] = t + xnhat;    
-      x_hat[s+N/2] = t - xnhat;    
+    for(int s = 0; s < Nmod2; s++){
+      t = x_hat_loc[s];
+      xnhat = C*x_hat_loc[s+Nmod2];
+      x_hat_loc[s] = t + xnhat;    
+      x_hat_loc[s+Nmod2] = t - xnhat; 
+      C = C*w;   
     }
-    
-    // Clean up 
-    free(x1); free(x2);
-    free(x1_hat); free(x2_hat);
+   
+    for(int s = 0; s < N; s++) x_hat[s] = x_hat_loc[s];    
+    free(x_hat_loc);
 
   } 
 }
@@ -84,49 +101,44 @@ void fft(dcomp* x,dcomp* x_hat, int N, int Nmodes){
  * N: size of current array (changes in recursion)
  * Nmodes: size of full array
 */
-void ifft(dcomp* x,dcomp* x_hat, int N, int Nmodes){
+void ifft(dcomp* x,const dcomp* x_hat,const int N,const int Nmodes){
 
   if(N == 1) x[0] = x_hat[0]/((dcomp) Nmodes);
   else{
-
-    // Preallocate some arrays
-    dcomp* x1 = (dcomp*) malloc(N/2 * sizeof(dcomp));
-    dcomp* x2 = (dcomp*) malloc(N/2 * sizeof(dcomp)); 
-    dcomp* x1_hat = (dcomp*) malloc(N/2 * sizeof(dcomp));
-    dcomp* x2_hat = (dcomp*) malloc(N/2 * sizeof(dcomp));
     
-    for(int s = 0; s < N/2; s++){
-      x1_hat[s] = x_hat[2*s]; //get even modes
-      x2_hat[s] = x_hat[2*s+1]; //get odd modes
+    int Nmod2 = N/2;
+    
+    // Preallocate local x array
+    dcomp* x_loc = (dcomp*) malloc(N * sizeof(dcomp));
+ 
+    for(int s = 0; s < Nmod2; s++){
+      x_loc[s] = x_hat[2*s];
+      x_loc[s + Nmod2] = x_hat[2*s+1];
     }
 
     // Recursive step 
     #pragma omp task if(N > Nmodes/(depth+1))
-    ifft(x1,x1_hat,N/2,Nmodes);   
+    ifft(x_loc,x_loc,Nmod2,Nmodes);   
     #pragma omp task if(N > Nmodes/(depth+1))
-    ifft(x2,x2_hat,N/2,Nmodes);
+    ifft(x_loc+Nmod2,x_loc+Nmod2,Nmod2,Nmodes);
     #pragma omp taskwait
     
-    // Write sums to full array
-    for(int s = 0; s < N/2; s++){
-      x[s] = x1[s];
-      x[s+N/2] = x2[s];
-    }
+    dcomp xn, t;
+    dcomp w = complex_exp_taylor(pi/Nmod2);
+    dcomp C = 1.0;
     
-    dcomp arg, xn, t;
- 
     // Reassemble using the Cooley-Tukey algorithm
-    for(int s = 0; s < N/2; s++){
-      t = x[s];
-      arg = 2*pi*s/N;
-      xn = exp(i*arg)*x[s+N/2];
-      x[s] = t + xn;    
-      x[s+N/2] = t - xn;    
+    for(int s = 0; s < Nmod2; s++){
+      t = x_loc[s];
+      xn = C*x_loc[s+Nmod2];
+      x_loc[s] = t + xn;    
+      x_loc[s+Nmod2] = t - xn;    
+      C = C*w;
     }
     
-    // Clean up
-    free(x1); free(x2);
-    free(x1_hat); free(x2_hat);
+    // Write sums to full array
+    for(int s = 0; s < N; s++) x[s] = x_loc[s];
+    free(x_loc);
 
   } 
 }
@@ -276,19 +288,39 @@ int main(int argc, char** argv) {
 
  
   /*** Test for KdV equation ***/
-  fft(u,u_hat,N,N); 
   double tt = omp_get_wtime();
-  kdv_rhs_hat(u_hat,B_hat,ikx,N); 
+  fft(u,u_hat,N,N); 
   printf("Elapsed time = %1.4e\n",omp_get_wtime() - tt);
-  
+    
   // Check solution
+  kdv_rhs_hat(u_hat,B_hat,ikx,N); 
   ifft(B,B_hat,N,N);
+
   double err = 0.0;
-  for(int s = 0; s < N; s++)
-    err += abs(real(B[s]) - real(kdv_ref[s]));
+  for(int s = 0; s < N; s++) err += abs(real(B[s]) - real(kdv_ref[s]));
   printf("Error in KdV operator = %1.4e\n",err);
 
+  /*** FFTW COMPARISON ***/
+  fftw_complex *in = (fftw_complex*) fftw_malloc(N*sizeof(fftw_complex));
+  fftw_complex *out = (fftw_complex*) fftw_malloc(N*sizeof(fftw_complex)); 
+  fftw_plan p = fftw_plan_dft_1d(N,in,out,1,FFTW_ESTIMATE);
+
+  for(int s = 0; s < N; s++){
+    double val = 1.0*exp(-10*pow(xx[s] - L/2,2));
+    in[s][0] = val; in[s][1] = 0.0;
+  }
+
+  tt = omp_get_wtime();
+  fftw_execute(p);
+  printf("Elapsed time = %1.4e\n",omp_get_wtime() - tt);
+
+  err = 0.0;
+  for(int s = 0; s < N; s++) err += abs(real(u_hat[s]) - out[s][0])/N;
+  printf("Error = %1.4e\n",err);
+
   //Clean up
+  fftw_destroy_plan(p);
+  fftw_free(in); fftw_free(out);
   free(u); free(u_hat);
   free(B); free(B_hat);
   free(kdv_ref);
