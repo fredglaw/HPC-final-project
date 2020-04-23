@@ -213,7 +213,7 @@ void kdv_rhs_hat(dcomp* u_hat, dcomp* B_hat, dcomp* ikx, int N){
 ////////////////////////////////////////////////////////////////////////
 
 /*
-TRBDF2_kdv
+SBDF2_kdv
 Solve dy/dt = A*y + B(y)
 Specialized for the KdV equation in Fourier space
 A is a diagonal matrix = diag(-(ikx)^3), where ikx are i times the Fourier modes
@@ -241,12 +241,12 @@ void SBDF2_kdv(dcomp* y, double t0, double tfinal,
     // y_next = y0 + dt*(A*y + B(y))
     #pragma omp parallel for schedule(static)
     for(int j=0; j<N; j++)
-      y[j] = y0[j] + dt*( -pow(ikx[j],3.0)*y0[j] + B_hatm1[j] );
+      y[j] = y0[j] + dt*( -ikx[j]*ikx[j]*ikx[j]*y0[j] + B_hatm1[j] );
 
     // main loop; time steps
     for(int m=0; m<M; m++) {
 
-      printf("Iteration %d/%d\n", m+1,M);
+      printf("Iteration %d/%d\r", m+1,M);
 
       // compute the nonlinear component; store in B_hat
       // done using OpenMP parallel (I)FFT
@@ -268,7 +268,7 @@ void SBDF2_kdv(dcomp* y, double t0, double tfinal,
         // printf("B_hatm1[j] = %f\n", B_hatm1[j]);
         y[j] = 4.0*y[j] - ym1[j] + 2.0*dt*(2.0*B_hat[j] - B_hatm1[j]);
         y[j] = y[j] / 3.0;
-        y[j] = y[j] / ( 1.0 + 2.0*dt/3.0*pow(ikx[j], 3.0) ); // simplified a double negative
+        y[j] = y[j] / ( 1.0 + 2.0*ikx[j]*ikx[j]*ikx[j]*dt/3.0 ); // simplified a double negative
 
         // update previous solution and nonlinearity
         ym1[j] = yj_temp;
@@ -289,10 +289,10 @@ int main(int argc, char** argv){
   printf("tfinal = %f\n", tfinal);
   printf("dt = %f\n", dt);
 
-  int N = 16; // number of modes; power of 2
+  int N = 64; // number of modes; power of 2
   depth = (int) log2(omp_get_max_threads());
 
-  double L = 2*pi; //size of domain
+  double L = 60; //size of domain
   double h = L/N; // step size
 
   printf("Using %d threads...\n",(int) pow(2.0,depth));
@@ -345,8 +345,9 @@ int main(int argc, char** argv){
   // recover the solution in real space via ifft
   ifft(u, u_hat, N, N);
 
-  for(int s = 0; s < N; s++) printf("u_hat[%d] = %f\n", s, u_hat[s]);
-  for(int s = 0; s < N; s++) printf("u_hat_true[%d] = %f\n", s, u_hat_true[s]);
+  // debugging printouts
+  // for(int s = 0; s < N; s++) printf("u_hat[%d] = %f\n", s, u_hat[s]);
+  // for(int s = 0; s < N; s++) printf("u_hat_true[%d] = %f\n", s, u_hat_true[s]);
 
   // compute error
   double err = 0.0;
