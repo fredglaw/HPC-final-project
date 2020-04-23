@@ -1,3 +1,9 @@
+
+/* Compile as
+ *  g++ -std=c++11 -O3 -fopenmp -march=native -o fft2 fft2.cpp
+ *    ./fft2 (N) (n_threads)
+*/
+
 #include <stdio.h>
 #include <math.h>
 #include <omp.h>
@@ -7,8 +13,29 @@ using namespace std ;
 typedef complex<double> dcomp;
 
 int n_threads;
-double pi = 4.0*atan(1); 
-dcomp i = sqrt((dcomp) -1); //unit imaginary
+const double pi = 4.0*atan(1); 
+const dcomp i = sqrt((dcomp) -1); //unit imaginary
+
+dcomp complex_exp_taylor(const double x){
+
+  double c_cos = 1.0;
+  double c_sin = x;
+  double cosx = 1.0;
+  double sinx = x;
+  int s = 1.0;
+  const double xsq = -0.5*x*x;
+
+  while(fabs(c_cos) > 1e-14){
+    c_cos = c_cos*xsq/(2.0*s*s - s);
+    c_sin = c_sin*xsq/(2.0*s*s + s);
+    cosx += c_cos;
+    sinx += c_sin;
+    s++;
+  }
+
+  return cosx + i*sinx;
+
+}
 
 /* Computes the DFT of x and writes to x_hat
  * x: input array of grid values
@@ -16,96 +43,86 @@ dcomp i = sqrt((dcomp) -1); //unit imaginary
  * N: size of current array (changes in recursion)
  * Nmodes: size of full array
 */
-
-void fft(dcomp* x,dcomp* x_hat, int N, int Nmodes){
+void fft(const dcomp* x, dcomp* x_hat,const int N,const int Nmodes){
 
   if(N == 1) x_hat[0] = x[0];
   else{
 
-    // Preallocate some arrays
-    dcomp* x1 = (dcomp*) malloc(N/2 * sizeof(dcomp));
-    dcomp* x2 = (dcomp*) malloc(N/2 * sizeof(dcomp)); 
-    dcomp* x1_hat = (dcomp*) malloc(N/2 * sizeof(dcomp));
-    dcomp* x2_hat = (dcomp*) malloc(N/2 * sizeof(dcomp));
+    int Nmod2 = N/2;
+
+    // Preallocate local Fourier transform
+    dcomp* x_hat_loc = (dcomp*) malloc(N * sizeof(dcomp));
     
-    for(int s = 0; s < N/2; s++){
-      x1[s] = x[2*s]; //even grid points
-      x2[s] = x[2*s+1]; //odd grid points
+    for(int s = 0; s < Nmod2; s++){
+      x_hat_loc[s] = x[2*s]; //even grid points
+      x_hat_loc[s + Nmod2] = x[2*s+1]; //odd grid points
     }
  
     // Recursive step   
-    fft(x1,x1_hat,N/2,Nmodes);   
-    fft(x2,x2_hat,N/2,Nmodes);
-    
-    // Write sums to full array   
-    for(int s = 0; s < N/2; s++){
-      x_hat[s] = x1_hat[s];
-      x_hat[s+N/2] = x2_hat[s];
-    }
-    
-    dcomp arg, xnhat, t;
+    fft(x_hat_loc,x_hat_loc,Nmod2,Nmodes);   
+    fft(x_hat_loc + Nmod2,x_hat_loc + Nmod2,Nmod2,Nmodes);
+     
+    dcomp xnhat, t;
+    dcomp w = complex_exp_taylor(-pi/Nmod2);
+    dcomp C = 1.0;
     
     // Reassebmle using the Cooley-Tukey algorithm
-    for(int s = 0; s < N/2; s++){
-      t = x_hat[s];
-      arg = -2*pi*s/N;
-      xnhat = exp(i*arg)*x_hat[s+N/2];
-      x_hat[s] = t + xnhat;    
-      x_hat[s+N/2] = t - xnhat;    
+    for(int s = 0; s < Nmod2; s++){
+      t = x_hat_loc[s];
+      xnhat = C*x_hat_loc[s+Nmod2];
+      x_hat_loc[s] = t + xnhat;    
+      x_hat_loc[s+Nmod2] = t - xnhat;
+      x_hat[s] = t + xnhat;
+      x_hat[s+Nmod2] = t - xnhat;    
+      C = C*w;
     }
     
     // Clean up 
-    free(x1); free(x2);
-    free(x1_hat); free(x2_hat);
+    free(x_hat_loc);
 
   } 
 }
+
 /* Computes the inverse DFT of x_hat
  * x: output array of grid values
  * x_hat: input array of Fourier coefficients
  * N: size of current array (changes in recursion)
  * Nmodes: size of full array
 */
-void ifft(dcomp* x,dcomp* x_hat, int N, int Nmodes){
+void ifft(dcomp* x, const dcomp* x_hat,const int N,const int Nmodes){
 
   if(N == 1) x[0] = x_hat[0]/((dcomp) Nmodes);
   else{
 
-    // Preallocate some arrays
-    dcomp* x1 = (dcomp*) malloc(N/2 * sizeof(dcomp));
-    dcomp* x2 = (dcomp*) malloc(N/2 * sizeof(dcomp)); 
-    dcomp* x1_hat = (dcomp*) malloc(N/2 * sizeof(dcomp));
-    dcomp* x2_hat = (dcomp*) malloc(N/2 * sizeof(dcomp));
+    int Nmod2 = N/2;
+
+    // Preallocate local grid valuess
+    dcomp* x_loc = (dcomp*) malloc(N * sizeof(dcomp));
     
-    for(int s = 0; s < N/2; s++){
-      x1_hat[s] = x_hat[2*s]; //get even modes
-      x2_hat[s] = x_hat[2*s+1]; //get odd modes
+    for(int s = 0; s < Nmod2; s++){
+      x_loc[s] = x_hat[2*s]; //get even modes
+      x_loc[s+Nmod2] = x_hat[2*s+1]; //get odd modes
     }
 
     // Recursive step 
-    ifft(x1,x1_hat,N/2,Nmodes);   
-    ifft(x2,x2_hat,N/2,Nmodes);
+    ifft(x_loc,x_loc,Nmod2,Nmodes);   
+    ifft(x_loc + Nmod2,x_loc + Nmod2,Nmod2,Nmodes);
     
-    // Write sums to full array
-    for(int s = 0; s < N/2; s++){
-      x[s] = x1[s];
-      x[s+N/2] = x2[s];
-    }
-    
-    dcomp arg, xn, t;
- 
+    dcomp xn, t;
+    dcomp w = complex_exp_taylor(pi/Nmod2); 
+    dcomp C = 1.0;
+
     // Reassemble using the Cooley-Tukey algorithm
-    for(int s = 0; s < N/2; s++){
-      t = x[s];
-      arg = 2*pi*s/N;
-      xn = exp(i*arg)*x[s+N/2];
-      x[s] = t + xn;    
-      x[s+N/2] = t - xn;    
+    for(int s = 0; s < Nmod2; s++){
+      t = x_loc[s];
+      xn = C*x_loc[s+N/2];
+      x[s] = x_loc[s] = t + xn;    
+      x[s+Nmod2] = x_loc[s+Nmod2] = t - xn;    
+      C = C*w;
     }
     
     // Clean up
-    free(x1); free(x2);
-    free(x1_hat); free(x2_hat);
+    free(x_loc);
 
   } 
 }
@@ -117,12 +134,13 @@ void ifft(dcomp* x,dcomp* x_hat, int N, int Nmodes){
 void fft2(dcomp* u, dcomp* u_hat, int Nx, int Ny){
 
   //fft in x-direction
-  #pragma omp parallel for num_threads(n_threads) schedule(static)
+  #pragma omp parallel num_threads(n_threads)
+  {
+  #pragma omp for schedule(static)
   for(int sy = 0; sy < Ny; sy++)
     fft(u + Nx*sy,u_hat + Nx*sy,Nx,Nx);
-  
   //fft in y-direction
-  #pragma omp parallel for num_threads(n_threads) schedule(static)
+  #pragma omp for schedule(static)
   for(int sx = 0; sx < Nx; sx++){
     dcomp* u_hat_loc = (dcomp*) malloc(Ny * sizeof(dcomp));
     for(int sy = 0; sy < Ny; sy++)
@@ -132,6 +150,7 @@ void fft2(dcomp* u, dcomp* u_hat, int Nx, int Ny){
       u_hat[sx + Nx*sy] = u_hat_loc[sy];
     free(u_hat_loc);
   }
+  }
 
 }
 
@@ -139,15 +158,19 @@ void fft2(dcomp* u, dcomp* u_hat, int Nx, int Ny){
  * This function consecutievly computes the IFFT in the x-drection and then
  * the y-direction.
  */
+
+
 void ifft2(dcomp* u, dcomp* u_hat, int Nx, int Ny){
 
   //fft in x-direction
-  #pragma omp parallel for num_threads(n_threads) schedule(static)
+  #pragma omp parallel
+  {
+  #pragma omp for schedule(static)
   for(int sy = 0; sy < Ny; sy++)
     ifft(u + Nx*sy,u_hat + Nx*sy,Nx,Nx);
   
   //fft in y-direction
-  #pragma omp parallel for num_threads(n_threads) schedule(static)
+  #pragma omp for schedule(static)
   for(int sx = 0; sx < Nx; sx++){
     dcomp* u_loc = (dcomp*) malloc(Ny * sizeof(dcomp));
     for(int sy = 0; sy < Ny; sy++)
@@ -157,7 +180,7 @@ void ifft2(dcomp* u, dcomp* u_hat, int Nx, int Ny){
       u[sx + Nx*sy] = u_loc[sy];
     free(u_loc);
   }
-
+  }
 }
 
 
@@ -216,7 +239,8 @@ int main(int argc, char** argv) {
   // Fill in u
   for(int sy = 0; sy < Ny; sy++){
     for(int sx = 0; sx < Nx; sx++){
-      u[sx + Nx*sy] = sin(2*pi*xx[sx]/Lx)*sin(2*pi*yy[sy]/Ly);
+      //u[sx + Nx*sy] = sin(2*pi*xx[sx]/Lx)*sin(2*pi*yy[sy]/Ly);
+      u[sx + Nx*sy] = xx[sx] + yy[sy];
       u_hat[sx + Nx*sy] = 0.0;
     }
   }
@@ -236,7 +260,7 @@ int main(int argc, char** argv) {
   }
 
   printf("Error = %1.4e\n",err);
-
+  
   //Clean up
   free(u); free(u_hat);
   free(ikx); free(iky);
