@@ -243,11 +243,19 @@ void SBDF2_kdv(dcomp* y, double t0, double tfinal,
     // initial nonlinearity; store in B_hatm1
     kdv_rhs_hat(y0, B_hatm1, ikx, N);
 
-    // take an Euler step -- write to y.
-    // y_next = y0 + dt*(A*y + B(y))
+    /*
+    Take an Euler predictor/corrector step (Heun's method) -- write to y.
+    We use a second order method to maintain asymptotic convergence.
+    */
+    // predictor step
     #pragma omp parallel for schedule(static)
     for(int j=0; j<N; j++)
       y[j] = y0[j] + dt*( -ikx[j]*ikx[j]*ikx[j]*y0[j] + B_hatm1[j] );
+    // corrector step
+    kdv_rhs_hat(y, B_hat, ikx, N);
+    #pragma omp parallel for schedule(static)
+    for(int j=0; j<N; j++)
+      y[j] = y0[j] + dt*( -ikx[j]*ikx[j]*ikx[j]*y0[j] + B_hatm1[j] - ikx[j]*ikx[j]*ikx[j]*y[j] + B_hat[j] ) / 2.0;
 
     // main loop; time steps
     for(int m=0; m<M-1; m++) {
@@ -305,7 +313,6 @@ int main(int argc, char** argv){
   printf("tfinal = %f\n", tfinal);
   printf("dt = %f\n", dt);
 
-  int N = 128; // number of modes; power of 2
   depth = (int) log2(omp_get_max_threads());
   depth = (int) 1.0;
   double L = 60; //size of domain
@@ -340,7 +347,7 @@ int main(int argc, char** argv){
     // initial data
     arg = sqrt(c)/2.0 * (xx[s] - c*t0);
     u[s] = -(c/2.0) * pow(cosh(arg), -2.0); //assign function values (memory address u is a placeholder)
-    
+
 
     // the true solution at time tfinal
     arg = sqrt(c)/2.0 * (xx[s] - c*tfinal);
@@ -351,7 +358,7 @@ int main(int argc, char** argv){
 
   }
 
-   
+
   // for(int s = 0; s < N; s++) printf("u0[%d] = %f\n", s, u[s]);
   fft(u, u_hat0, N, N); // solve the ODE in Fourier space. Put initial data there.
   fft(u_true, u_hat_true, N, N); // True solution in Fourier space
