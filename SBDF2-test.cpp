@@ -13,6 +13,7 @@ typedef complex<double> dcomp;
 int depth;
 const double pi = 4.0*atan(1);
 const dcomp i = sqrt((dcomp) -1); //unit imaginary
+int N;
 
 dcomp complex_exp_taylor(const double x){
 
@@ -249,7 +250,7 @@ void SBDF2_kdv(dcomp* y, double t0, double tfinal,
       y[j] = y0[j] + dt*( -ikx[j]*ikx[j]*ikx[j]*y0[j] + B_hatm1[j] );
 
     // main loop; time steps
-    for(int m=0; m<M; m++) {
+    for(int m=0; m<M-1; m++) {
 
       printf("Iteration %d/%d\r", m+1,M);
 
@@ -288,15 +289,25 @@ void SBDF2_kdv(dcomp* y, double t0, double tfinal,
 int main(int argc, char** argv){
 
   double t0 = 0; // initial time
-  double tfinal = pi; // terminal time
-  double dt = 0.01; // fine time step
+  double tfinal = 0.1; // terminal time
+  double dt;
+
+  if(argc < 3){
+    printf("\n Call instructions:\n    ./SBDF2-test (N) (dt)\n\n");
+    return 0;
+  }
+  else{
+    N = atoi(argv[1]);
+    dt = atof(argv[2]);
+  }
+
   printf("t0 = %f\n", t0);
   printf("tfinal = %f\n", tfinal);
   printf("dt = %f\n", dt);
 
-  int N = 64; // number of modes; power of 2
+  int N = 128; // number of modes; power of 2
   depth = (int) log2(omp_get_max_threads());
-
+  depth = (int) 1.0;
   double L = 60; //size of domain
   double h = L/N; // step size
 
@@ -324,11 +335,12 @@ int main(int argc, char** argv){
 
   for(int s = 0; s < N; s++){
 
-    xx[s] = (L/N)*s; //grid point values on [0,L]
+    xx[s] = (L/N)*s - L/2; //grid point values on [0,L]
 
     // initial data
     arg = sqrt(c)/2.0 * (xx[s] - c*t0);
     u[s] = -(c/2.0) * pow(cosh(arg), -2.0); //assign function values (memory address u is a placeholder)
+    
 
     // the true solution at time tfinal
     arg = sqrt(c)/2.0 * (xx[s] - c*tfinal);
@@ -338,6 +350,8 @@ int main(int argc, char** argv){
     else ikx[s] = 2*pi*i/L*((dcomp) s - (dcomp) N); //modes -N/2,..,-1
 
   }
+
+   
   // for(int s = 0; s < N; s++) printf("u0[%d] = %f\n", s, u[s]);
   fft(u, u_hat0, N, N); // solve the ODE in Fourier space. Put initial data there.
   fft(u_true, u_hat_true, N, N); // True solution in Fourier space
@@ -346,7 +360,6 @@ int main(int argc, char** argv){
   double tt = omp_get_wtime();
   SBDF2_kdv(u_hat, t0, tfinal, dt, u_hat0, ikx, N, B_hat, B_hatm1);
   printf("Elapsed time = %1.4e\n",omp_get_wtime() - tt);
-
   // recover the solution in real space via ifft
   ifft(u, u_hat, N, N);
 
@@ -366,6 +379,9 @@ int main(int argc, char** argv){
     err2 += h*abs( imag(u_hat[s]) - imag(u_hat_true[s]) );
   }
   printf("SBDF2 Fourier Error: %1.10e\n", err2);
+
+  //for(int s = 0; s < N; s++)
+  //  printf("%f;\n",real(u[s]));
 
   // tidy
   free(u);
