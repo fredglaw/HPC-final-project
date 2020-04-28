@@ -289,18 +289,25 @@ int main(int argc, char** argv) {
  
   /*** Test for KdV equation ***/
   double tt = omp_get_wtime();
-  fft(u,u_hat,N,N); 
+  #pragma omp parallel
+  {  
+    #pragma omp single
+    fft(u,u_hat,N,N);
+  }
+
   printf("Elapsed time = %1.4e\n",omp_get_wtime() - tt);
     
   // Check solution
-  kdv_rhs_hat(u_hat,B_hat,ikx,N); 
-  ifft(B,B_hat,N,N);
+  //kdv_rhs_hat(u_hat,B_hat,ikx,N); 
+  //ifft(B,B_hat,N,N);
 
-  double err = 0.0;
-  for(int s = 0; s < N; s++) err += abs(real(B[s]) - real(kdv_ref[s]));
-  printf("Error in KdV operator = %1.4e\n",err);
+  //double err = 0.0;
+  //for(int s = 0; s < N; s++) err += abs(real(B[s]) - real(kdv_ref[s]));
+  //printf("Error in KdV operator = %1.4e\n",err);
 
+  
   /*** FFTW COMPARISON ***/
+  
   fftw_complex *in = (fftw_complex*) fftw_malloc(N*sizeof(fftw_complex));
   fftw_complex *out = (fftw_complex*) fftw_malloc(N*sizeof(fftw_complex)); 
   fftw_plan p = fftw_plan_dft_1d(N,in,out,1,FFTW_ESTIMATE);
@@ -314,17 +321,19 @@ int main(int argc, char** argv) {
   fftw_execute(p);
   printf("Elapsed time = %1.4e\n",omp_get_wtime() - tt);
 
-  err = 0.0;
+  double err = 0.0;
   for(int s = 0; s < N; s++) err += abs(real(u_hat[s]) - out[s][0])/N;
   printf("Error = %1.4e\n",err);
 
   //Clean up
   fftw_destroy_plan(p);
   fftw_free(in); fftw_free(out);
+
   free(u); free(u_hat);
   free(B); free(B_hat);
   free(kdv_ref);
   free(ikx);
+  free(xx);
   return 0;
 
 }
