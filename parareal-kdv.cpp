@@ -144,7 +144,7 @@ void kdv_rhs_hat(dcomp* u_hat, dcomp* B_hat, dcomp* ikx, int N){
   // Allocate memory
   //dcomp* usq = (dcomp*) malloc(N * sizeof(dcomp));
   double usq_s;
-  
+
   // Compute u in real space (we overwrite B_hat)
   #pragma omp parallel num_threads(N_THREADS_FFT)
   {
@@ -211,7 +211,7 @@ void SBDF2_kdv(dcomp* y, double t0, double tfinal,
       ikx_j = ikx[j];
       y[j] = (1.0 - dt*ikx_j*ikx_j*ikx_j)*y0[j] + dt*B_hatm1[j];
     }
- 
+
     // corrector step
     kdv_rhs_hat(y, B_hat, ikx, N);
     #pragma omp parallel for schedule(static) num_threads(N_THREADS_FFT) private(ikx_j)
@@ -271,10 +271,10 @@ void IMEX_Euler_kdv(dcomp* y, // solution to write to
                     long N, // dimension of the ODE
                     dcomp* B_hat //buffer for non-stiff portion of KdV
                     ){
-  
+
   long M = floor((tfinal - t0) / dt);
   dcomp ikx_j;
-  
+
   for (long j = 0; j < N; j++) y[j] = y0[j];
 
   //assume y has come preloaded with the initial condition.
@@ -313,7 +313,7 @@ void parareal(dcomp* u, //solution to write to, size (M+1) x N
     dcomp* B_buff = (dcomp*) malloc(N*sizeof(dcomp)); // to hold B for TRBDF2
     dcomp* Bm1_buff = (dcomp*) malloc(N*sizeof(dcomp)); // to hold Bm1 for TRBDF2
     // dcomp* fft_buff  = (dcomp*) malloc(N*sizeof(dcomp)); //buffer for the fft in kdv_rhs_hat
-    
+
     //initialize
     while (counter<max_iter){
 
@@ -323,7 +323,7 @@ void parareal(dcomp* u, //solution to write to, size (M+1) x N
         for (long j=0; j<N; j++) um1_buff[j] = u[j]; //copy the current solution to FP buffer
         SBDF2_kdv(writeto,timeVec[0],timeVec[1],dtF,um1_buff,ikx,N,B_buff,Bm1_buff); // solve and write
         for (long j=0; j<N; j++) u_par[j+N] = writeto[j]; //update u_par
-        
+
         //G-propagator step
         for (long j=0; j<N; j++) um1_buff[j] = u[j]; //copy the current solution to FP buffer, again
         IMEX_Euler_kdv(writeto,timeVec[0],timeVec[1],dtG,um1_buff,ikx,N,B_buff); // solve and write
@@ -333,12 +333,12 @@ void parareal(dcomp* u, //solution to write to, size (M+1) x N
       //compute multiple shooting in parallel
       #pragma omp for
       for(long s = 1; s < M; s++){
-        
+
         //F-propagator step
         //for (long j=0; j<N; j++) um1_buff[j] = u[j+s*N]; //copy the current solution to FP buffer
         //SBDF2_kdv(writeto,timeVec[s],timeVec[s+1],dtF,um1_buff,ikx,N,B_buff,Bm1_buff); // solve and write
         //for (long j=0; j<N; j++) u_par[j+(s+1)*N] = writeto[j]; //update u_par
-        
+
         //G-propagator step
         //for (long j=0; j<N; j++) um1_buff[j] = u[j+s*N]; //copy the current solution to FP buffer, again
         //IMEX_Euler_kdv(writeto,timeVec[s],timeVec[s+1],dtG,um1_buff,ikx,N,B_buff); // solve and write
@@ -355,7 +355,7 @@ void parareal(dcomp* u, //solution to write to, size (M+1) x N
       //compute update + extra Gpropagator solve in serial
       if (0==tid){ //master thread does serial
         for (long s=0; s<M ;s++){ //loop over every time step
-          
+
           //for (long j=0; j<N; j++) um1_buff[j] = u_par[j+s*N]; //copy to tid0 buffer
           //IMEX_Euler_kdv(writeto,timeVec[s],timeVec[s+1],dtG,um1_buff,ikx,N,B_buff); // solve and write
           //for (long j=0; j<N; j++) u_par[j+(s+1)*N] += writeto[j]; //parareal correction
@@ -370,7 +370,7 @@ void parareal(dcomp* u, //solution to write to, size (M+1) x N
 
       #pragma omp for
       for(long j = N; j < N*(M+1); j++) u[j] = u_par[j]; //write from u_par to u
-    
+
     } // end of while loop
 
     free(writeto);
@@ -403,12 +403,12 @@ int main(int argc, char** argv){
   }
 
   long M = round((tfinal - t0)/dt);
-  
+
   //get vector of times
   double *timeVec = (double*) malloc((M+1) * sizeof(double));
   for(long s=0; s<= M; s++) timeVec[s] = (double)s*dt;
 
-  printf("t0 = %ftfinal = %f\ncoarse dt = %f\nfine dt = %d\n", t0,tfinal,dt,dt/(double)ratio);
+  printf("t0 = %f\ntfinal = %f\ncoarse dt = %f\nfine dt = %d\n", t0,tfinal,dt,dt/(double)ratio);
 
   // int N = 128; // number of modes; power of 2
   depth = (int) log2(N_THREADS_FFT);
@@ -416,9 +416,11 @@ int main(int argc, char** argv){
   double L = 60; //size of domain
   double h = L/N; // step size
 
-  printf("Using %d threads...\n",(int) pow(2.0,depth));
+  printf("Using %d threads for FFT\n",(int) pow(2.0,depth));
+  printf("Using %d threads for parareal\n", N_THREADS_PR);
+  printf("Using %d threads in total\n",N_THREADS_PR*N_THREADS_FFT);
   int mem_size = N * sizeof(dcomp);
-  
+
   // Preallocate arrays
   dcomp* u_coarse      = (dcomp*) malloc((M+1)*mem_size); // numerical ODE solution
   dcomp* u_hat_coarse  = (dcomp*) malloc((M+1)*mem_size); //Fourier coefficients
@@ -474,30 +476,35 @@ int main(int argc, char** argv){
   fft(u_coarse, u_hat_coarse, N, N); // solve the ODE in Fourier space. Put initial data there.
   fft(u_fine, u_hat_fine,N,N);
 
+  printf("\n");
+  printf("******************** RUNNING SOLVERS ********************\n");
   // coarse solve in Fourier space
-  double tt = omp_get_wtime();
+  double tt_coarse = omp_get_wtime();
   for(long s=0; s<M; s++){
     for(long j=0; j<N; j++) u_hat0[j] = u_hat_coarse[j+s*N]; //copy correct IC to a buffer u_hat0
     IMEX_Euler_kdv(u_hat_coarse+((s+1)*N), timeVec[s], timeVec[s+1], dt, u_hat0, ikx, N, B_hat); //solve)
   }
-  printf("Coarse time = %1.4e\n",omp_get_wtime() - tt);
+  tt_coarse = omp_get_wtime() - tt_coarse;
+  printf("Coarse time = %1.4e\n",tt_coarse);
 
   // fine solve in Fourier space
-  tt = omp_get_wtime();
+  double tt_fine = omp_get_wtime();
   for(long s=0; s<M; s++){
     for(long j=0; j<N; j++) u_hat0[j] = u_hat_fine[j+s*N]; //copy correct IC to a buffer u_hat0
     SBDF2_kdv(u_hat_fine+((s+1)*N), timeVec[s], timeVec[s+1], dt/ratio, u_hat0, ikx, N, B_hat, B_hatm1); //solve
   }
-  printf("Fine time = %1.4e\n",omp_get_wtime() - tt);
+  tt_fine = omp_get_wtime() - tt_fine;
+  printf("Fine time = %1.4e\n",tt_fine);
 
   //parareal solve in Fourier space
   for (long s=0; s<(M+1)*N; s++){
     u_hat_PR[s] = u_hat_coarse[s];
     u_hat_PR_buff[s] = u_hat_coarse[s];
   }
-  tt = omp_get_wtime();
+  double tt_PR = omp_get_wtime();
   parareal(u_hat_PR,u_hat_PR_buff,timeVec,ikx,M,dt/ratio,dt,PR_iters,N);
-  printf("PR time = %1.4e\n",omp_get_wtime() - tt);
+  tt_PR = omp_get_wtime() - tt_PR;
+  printf("PR time = %1.4e\n",tt_PR);
 
   // recover the solutions in real space via ifft
   for (long s=0; s<=M; s++){
@@ -527,7 +534,7 @@ int main(int argc, char** argv){
       temp_err_PR += h*abs(u_PR[j+s*N] - u_true[j+s*N]);
     }
     if( s % ((int) (0.01/dt)) == 0 )
-      printf("PR error at time %2.6f is: %1.4e\n",timeVec[s],temp_err_PR);
+      // printf("PR error at time %2.6f is: %1.4e\n",timeVec[s],temp_err_PR);
     err_fine = fmax(temp_err_fine,err_fine);
     err_coarse = fmax(temp_err_coarse,err_coarse);
     err_PR = fmax(temp_err_PR,err_PR);
@@ -559,6 +566,29 @@ int main(int argc, char** argv){
 
   //for(int s = 0; s < N; s++)
    // printf("%2.6e;\n",real(u_PR[s+(M*N)]));
+
+   printf("\n");
+   printf("******************** ERRORS ********************\n");
+
+   printf("Coarse Error: %1.10e\n", err_coarse);
+   printf("Coarse Fourier Error: %1.10e\n", err_coarse2);
+   printf("\n");
+   printf("Fine Error: %1.10e\n",err_fine);
+   printf("Fine Fourier Error: %1.10e\n",err_fine2);
+   printf("\n");
+   printf("Parareal Error: %1.10e\n",err_PR);
+   printf("Parareal Fourier Error: %1.10e\n",err_PR2);
+   printf("\n");
+
+   //measure speedup and efficiency
+   double speedup = tt_fine / tt_PR;
+   double PR_speedup = N_THREADS_PR/(double)PR_iters;
+   double ideal_speedup = (N_THREADS_PR*N_THREADS_FFT)/(double)PR_iters;
+   double efficiency = speedup / ideal_speedup;
+   printf("speedup: %f\n",speedup);
+   printf("PR efficiency: %f\n",speedup/PR_speedup);
+   printf("total efficiency: %f\n",efficiency);
+   printf("\n");
 
   // tidy
   free(u_coarse);
