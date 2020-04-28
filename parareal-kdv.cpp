@@ -12,10 +12,10 @@ typedef complex<double> dcomp;
 #define N_THREADS_PR 32
 #define N_THREADS_FFT 2
 
-int depth;
+long depth;
 double pi = 4.0*atan(1);
 dcomp i = sqrt((dcomp) -1); //unit imaginary
-int N;
+long N;
 
 dcomp complex_exp_taylor(const double x){
 
@@ -23,7 +23,7 @@ dcomp complex_exp_taylor(const double x){
   double C2 = x;
   double val1 = 1.0;
   double val2 = x;
-  int s = 1.0;
+  long s = 1.0;
   double xsq = -0.5*x*x;
 
   while(fabs(C1) > 1e-14){
@@ -44,17 +44,17 @@ dcomp complex_exp_taylor(const double x){
  * N: size of current array (changes in recursion)
  * Nmodes: size of full array
 */
-void fft(const dcomp* x,dcomp* x_hat, const int N, const int Nmodes){
+void fft(const dcomp* x,dcomp* x_hat, const long N, const long Nmodes){
 
   if(N == 1) x_hat[0] = x[0];
   else{
 
-    int Nmod2 = N/2;
+    long Nmod2 = N/2;
 
     // Preallocate local x_hat array
     dcomp* x_hat_loc = (dcomp*) malloc(N * sizeof(dcomp));
 
-    for(int s = 0; s < Nmod2; s++){
+    for(long s = 0; s < Nmod2; s++){
       x_hat_loc[s] = x[2*s]; //even grid points
       x_hat_loc[s+Nmod2] = x[2*s+1]; //odd grid points
     }
@@ -71,7 +71,7 @@ void fft(const dcomp* x,dcomp* x_hat, const int N, const int Nmodes){
     dcomp C = 1.0;
 
     // Reassebmle using the Cooley-Tukey algorithm
-    for(int s = 0; s < Nmod2; s++){
+    for(long s = 0; s < Nmod2; s++){
       t = x_hat_loc[s];
       xnhat = C*x_hat_loc[s+Nmod2];
       x_hat_loc[s] = t + xnhat;
@@ -79,7 +79,7 @@ void fft(const dcomp* x,dcomp* x_hat, const int N, const int Nmodes){
       C = C*w;
     }
 
-    for(int s = 0; s < N; s++) x_hat[s] = x_hat_loc[s];
+    for(long s = 0; s < N; s++) x_hat[s] = x_hat_loc[s];
     free(x_hat_loc);
 
   }
@@ -91,17 +91,17 @@ void fft(const dcomp* x,dcomp* x_hat, const int N, const int Nmodes){
  * N: size of current array (changes in recursion)
  * Nmodes: size of full array
 */
-void ifft(dcomp* x,const dcomp* x_hat,const int N,const int Nmodes){
+void ifft(dcomp* x,const dcomp* x_hat,const long N,const long Nmodes){
 
   if(N == 1) x[0] = x_hat[0]/((dcomp) Nmodes);
   else{
 
-    int Nmod2 = N/2;
+    long Nmod2 = N/2;
 
     // Preallocate local x array
     dcomp* x_loc = (dcomp*) malloc(N * sizeof(dcomp));
 
-    for(int s = 0; s < Nmod2; s++){
+    for(long s = 0; s < Nmod2; s++){
       x_loc[s] = x_hat[2*s];
       x_loc[s + Nmod2] = x_hat[2*s+1];
     }
@@ -118,7 +118,7 @@ void ifft(dcomp* x,const dcomp* x_hat,const int N,const int Nmodes){
     dcomp C = 1.0;
 
     // Reassemble using the Cooley-Tukey algorithm
-    for(int s = 0; s < Nmod2; s++){
+    for(long s = 0; s < Nmod2; s++){
       t = x_loc[s];
       xn = C*x_loc[s+Nmod2];
       x_loc[s] = t + xn;
@@ -127,7 +127,7 @@ void ifft(dcomp* x,const dcomp* x_hat,const int N,const int Nmodes){
     }
 
     // Write sums to full array
-    for(int s = 0; s < N; s++) x[s] = x_loc[s];
+    for(long s = 0; s < N; s++) x[s] = x_loc[s];
     free(x_loc);
 
   }
@@ -139,7 +139,7 @@ void ifft(dcomp* x,const dcomp* x_hat,const int N,const int Nmodes){
  * ikx: array of Fourier modes
  * N: number of modes
  */
-void kdv_rhs_hat(dcomp* u_hat, dcomp* B_hat, dcomp* ikx, int N){
+void kdv_rhs_hat(dcomp* u_hat, dcomp* B_hat, dcomp* ikx, long N){
 
   // Allocate memory
   //dcomp* usq = (dcomp*) malloc(N * sizeof(dcomp));
@@ -153,7 +153,7 @@ void kdv_rhs_hat(dcomp* u_hat, dcomp* B_hat, dcomp* ikx, int N){
 
     // Square value
     #pragma omp for private(usq_s)
-    for(int s = 0; s < N; s++){
+    for(long s = 0; s < N; s++){
       usq_s = real(B_hat[s]);
       B_hat[s] = 3*usq_s*usq_s;
     }
@@ -164,7 +164,7 @@ void kdv_rhs_hat(dcomp* u_hat, dcomp* B_hat, dcomp* ikx, int N){
 
     // Differentiate in Fourier space
     #pragma omp for
-    for(int s = 0; s < N; s++)
+    for(long s = 0; s < N; s++)
       B_hat[s] *= ikx[s];
   }
 
@@ -187,7 +187,7 @@ Write solution into y (y at time tfinal).
 Memory addresses B_hat and B_hatm1 are N-vectors to be used for the nonlinear terms.
 */
 void SBDF2_kdv(dcomp* y, double t0, double tfinal,
-               double dt, dcomp* y0, dcomp* ikx, int N,
+               double dt, dcomp* y0, dcomp* ikx, long N,
                dcomp* B_hat, dcomp* B_hatm1){
 
     // initialize method parameters
@@ -207,7 +207,7 @@ void SBDF2_kdv(dcomp* y, double t0, double tfinal,
     // predictor step
     dcomp ikx_j;
     #pragma omp parallel for schedule(static) num_threads(N_THREADS_FFT) private(ikx_j)
-    for(int j = 0; j < N; j++){
+    for(long j = 0; j < N; j++){
       ikx_j = ikx[j];
       y[j] = (1.0 - dt*ikx_j*ikx_j*ikx_j)*y0[j] + dt*B_hatm1[j];
     }
@@ -215,7 +215,7 @@ void SBDF2_kdv(dcomp* y, double t0, double tfinal,
     // corrector step
     kdv_rhs_hat(y, B_hat, ikx, N);
     #pragma omp parallel for schedule(static) num_threads(N_THREADS_FFT) private(ikx_j)
-    for(int j = 0; j < N; j++){
+    for(long j = 0; j < N; j++){
       ikx_j = ikx[j];
       y[j] = (1.0 - 0.5*dt*ikx_j*ikx_j*ikx_j)*y0[j] + 0.5*dt*(B_hatm1[j] - ikx_j*ikx_j*ikx_j*y[j] + B_hat[j]);
     }
@@ -223,7 +223,7 @@ void SBDF2_kdv(dcomp* y, double t0, double tfinal,
     // IMEX_Euler_kdv(y,t0,t0+dt,dt,ym1,ikx,N,B_hat);
 
     // main loop; time steps
-    for(int m = 0; m < M-1; m++) {
+    for(long m = 0; m < M-1; m++) {
 
       printf("Iteration %d/%d\r", m+1,M);
 
@@ -233,7 +233,7 @@ void SBDF2_kdv(dcomp* y, double t0, double tfinal,
 
       // take one update step; update each of the N components
       #pragma omp parallel for schedule(static) num_threads(N_THREADS_FFT) private(ikx_j)
-      for(int j = 0; j < N; j++) {
+      for(long j = 0; j < N; j++) {
 
         // make a copy of the current iterate
         // needed for parsimonious memory management at the update step
@@ -306,7 +306,7 @@ void parareal(dcomp* u, //solution to write to, size (M+1) x N
   //run parareal iterations
   #pragma omp parallel num_threads(N_THREADS_PR)
   {//begin parallel region
-    int tid = omp_get_thread_num(); // get the thread
+    long tid = omp_get_thread_num(); // get the thread
     // initialize thread-private buffers
     dcomp* writeto = (dcomp*) malloc(N*sizeof(dcomp)); //to write to
     dcomp* um1_buff = (dcomp*) malloc(N*sizeof(dcomp)); //buffer for um1, has IC
@@ -410,16 +410,16 @@ int main(int argc, char** argv){
 
   printf("t0 = %f\ntfinal = %f\ncoarse dt = %f\nfine dt = %d\n", t0,tfinal,dt,dt/(double)ratio);
 
-  // int N = 128; // number of modes; power of 2
-  depth = (int) log2(N_THREADS_FFT);
-  // depth = (int) 1.0;
+  // long N = 128; // number of modes; power of 2
+  depth = (long) log2(N_THREADS_FFT);
+  // depth = (long) 1.0;
   double L = 60; //size of domain
   double h = L/N; // step size
 
-  printf("Using %d threads for FFT\n",(int) pow(2.0,depth));
+  printf("Using %d threads for FFT\n",(long) pow(2.0,depth));
   printf("Using %d threads for parareal\n", N_THREADS_PR);
   printf("Using %d threads in total\n",N_THREADS_PR*N_THREADS_FFT);
-  int mem_size = N * sizeof(dcomp);
+  long mem_size = N * sizeof(dcomp);
 
   // Preallocate arrays
   dcomp* u_coarse      = (dcomp*) malloc((M+1)*mem_size); // numerical ODE solution
@@ -514,8 +514,8 @@ int main(int argc, char** argv){
   }
 
   // debugging printouts
-  // for(int s = 0; s < N; s++) printf("u_hat[%d] = %f\n", s, u_hat[s]);
-  // for(int s = 0; s < N; s++) printf("u_hat_true[%d] = %f\n", s, u_hat_true[s]);
+  // for(long s = 0; s < N; s++) printf("u_hat[%d] = %f\n", s, u_hat[s]);
+  // for(long s = 0; s < N; s++) printf("u_hat_true[%d] = %f\n", s, u_hat_true[s]);
 
   // compute errors
   double err_fine = 0.0;
@@ -533,7 +533,7 @@ int main(int argc, char** argv){
       temp_err_fine += h*abs(u_fine[j+s*N] - u_true[j+s*N]);
       temp_err_PR += h*abs(u_PR[j+s*N] - u_true[j+s*N]);
     }
-    if( s % ((int) (0.01/dt)) == 0 )
+    if( s % ((long) (0.01/dt)) == 0 )
       // printf("PR error at time %2.6f is: %1.4e\n",timeVec[s],temp_err_PR);
     err_fine = fmax(temp_err_fine,err_fine);
     err_coarse = fmax(temp_err_coarse,err_coarse);
@@ -564,7 +564,7 @@ int main(int argc, char** argv){
   // printf("Fine Fourier Error: %1.10e\n",err_fine);
   // printf("Parareal Fourier Error: %1.10e\n",err_PR);
 
-  //for(int s = 0; s < N; s++)
+  //for(long s = 0; s < N; s++)
    // printf("%2.6e;\n",real(u_PR[s+(M*N)]));
 
    printf("\n");
