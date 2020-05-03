@@ -9,7 +9,7 @@
 using namespace std ;
 typedef complex<double> dcomp;
 
-#define N_THREADS_PR 1
+#define N_THREADS_PR 64
 #define N_THREADS_FFT 1
 
 long depth;
@@ -355,7 +355,7 @@ void parareal(dcomp* u, //solution to write to, size (M+1) x N
 int main(int argc, char** argv){
 
   double t0 = 0; // initial time
-  double tfinal = 1; // terminal time
+  double tfinal = 0.64; // terminal time
   double dt;
   double ratio;
   long PR_iters;
